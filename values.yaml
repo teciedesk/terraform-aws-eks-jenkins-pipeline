@@ -1,0 +1,18 @@
+controller:
+  image: "jenkins/jenkins:lts"
+  tag: "latest"
+  installPlugins:
+    - kubernetes
+    - workflow-aggregator
+    - git
+    - configuration-as-code
+
+  persistence:
+    enabled: true
+    storageClass: "ebs-sc"
+    accessMode: "ReadWriteOnce"
+    size: "10Gi"
+
+  service:
+    type: LoadBalancer
+    port: 8080
