@@ -1,6 +1,9 @@
 controller:
-  image: "jenkins/jenkins:lts"
-  tag: "latest"
+  image:
+    registry: docker.io
+    repository: jenkins/jenkins
+    tag: lts
+
   installPlugins:
     - kubernetes
     - workflow-aggregator
@@ -13,6 +16,5 @@ controller:
     accessMode: "ReadWriteOnce"
     size: "10Gi"
 
-  service:
-    type: LoadBalancer
-    port: 8080
+  serviceType: LoadBalancer
+  servicePort: 8080

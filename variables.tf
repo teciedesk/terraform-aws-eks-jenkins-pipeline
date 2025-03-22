@@ -6,6 +6,4 @@ variable "aws_region" {
 variable "cluster_name" {
   description = "EKS Cluster Name"
   type        = string 
-  default     = "tecie-eks-cluster"
 }
-
