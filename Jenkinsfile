@@ -1,77 +1,88 @@
 pipeline {
-  agent {
-    kubernetes {
-      yaml """
-apiVersion: v1
-kind: Pod
-metadata:
-  labels:
-    some-label: eks-jenkins-agent
-spec:
-  containers:
-  - name: eks-jenkins-agent
-    image: jenkins/inbound-agent:3299.v0d0d06908537-1
-    command:
-    - cat
-    tty: true
-    volumeMounts:
-    - name: docker-sock
-      mountPath: /var/run/docker.sock
-  volumes:
-  - name: docker-sock
-    hostPath:
-      path: /var/run/docker.sock
-"""
-    }
-  }
-
-  environment {
-    AWS_REGION = 'us-west-1'
-  }
-
-  stages {
-    stage('Initialize') {
-      steps {
-        container('eks-jenkins-agent') {
-          script {
-            sh '''
-              echo "Installing wget & unzip..."
-              apt-get update && apt-get install -y wget unzip
-
-              echo "Terraform not found, installing..."
-              wget https://releases.hashicorp.com/terraform/1.0.11/terraform_1.0.11_linux_amd64.zip
-              unzip terraform_1.0.11_linux_amd64.zip
-              mv terraform /usr/local/bin/
-              terraform version
-            '''
-          }
+    agent {
+        kubernetes {
+            yamlFile 'jenkins-pod.yaml'  // Uses your existing pod template
+            defaultContainer 'build'     // Default to the build container
         }
-      }
     }
+    environment {
+        AWS_DEFAULT_REGION = 'your-aws-region' // e.g., us-west-1
+        // Add AWS credentials here if using Jenkins credentials store
+        // AWS_ACCESS_KEY_ID = credentials('aws-access-key-id')
+        // AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
+    }
+    stages {
 
-    stage('Terraform Init') {
-      steps {
-        container('eks-jenkins-agent') {
-          sh 'terraform init'
+        stage('Clone Repo') {
+            steps {
+                git branch: 'main', url: 'https://github.com/teciedesk/terraform-aws-eks-jenkins-pipeline.git'
+            }
         }
-      }
-    }
 
-    stage('Terraform Plan') {
-      steps {
-        container('eks-jenkins-agent') {
-          sh 'terraform plan'
+        stage('Terraform Format & Validate') {
+            steps {
+                container('build') {
+                    sh '''
+                    echo "Formatting Terraform files..."
+                    terraform fmt -check
+                    terraform validate
+                    '''
+                }
+            }
         }
-      }
-    }
 
-    stage('Terraform Apply') {
-      steps {
-        container('eks-jenkins-agent') {
-          sh 'terraform apply -auto-approve'
+        stage('Terraform Plan') {
+            steps {
+                container('build') {
+                    sh '''
+                    echo "Initializing Terraform..."
+                    terraform init
+                    terraform plan -out=tfplan
+                    '''
+                }
+            }
         }
-      }
-    }
 
-  }
+        stage('Terraform Apply') {
+            steps {
+                input message: "Apply Terraform changes?" // Manual approval
+                container('build') {
+                    sh '''
+                    terraform apply -auto-approve tfplan
+                    '''
+                }
+            }
+        }
+
+        stage('Kubernetes Deployment') {
+            steps {
+                container('build') {
+                    sh '''
+                    echo "Deploying Kubernetes resources..."
+                    kubectl apply -f k8s/jenkins-deployment.yaml
+                    '''
+                }
+            }
+        }
+
+        stage('Post-Deployment') {
+            steps {
+                container('build') {
+                    sh '''
+                    echo "Listing deployed services..."
+                    kubectl get svc -n jenkins
+                    '''
+                }
+            }
+        }
+
+    }
+    post {
+        success {
+            echo 'Pipeline completed successfully!'
+        }
+        failure {
+            echo 'Pipeline failed. Check logs.'
+        }
+    }
 }
